@@ -1,0 +1,34 @@
+# -------------------------------
+# FastAPI web framework
+# -------------------------------
+fastapi==0.115.0
+
+# -------------------------------
+# ASGI server used to run FastAPI
+# -------------------------------
+uvicorn[standard]==0.30.6
+
+# -------------------------------
+# Database ORM (Object Relational Mapper)
+# -------------------------------
+sqlalchemy==2.0.32
+
+# -------------------------------
+# PostgreSQL driver for SQLAlchemy
+# -------------------------------
+psycopg[binary]==3.2.1
+
+# -------------------------------
+# Data validation & serialization
+# -------------------------------
+pydantic==2.8.2
+
+# -------------------------------
+# Database migrations
+# -------------------------------
+alembic==1.13.2
+
+# -------------------------------
+# Load environment variables from .env (later)
+# -------------------------------
+python-dotenv==1.0.1

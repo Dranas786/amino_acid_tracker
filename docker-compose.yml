@@ -1,0 +1,64 @@
+# docker-compose.yml
+# ---------------------------------------------------------
+# WHAT THIS FILE DOES:
+# - Starts a local Postgres database container (db)
+# - Starts your backend API container (api) running FastAPI
+# - Connects the API to the DB using an internal Docker network
+#
+# WHY THIS IS GOOD:
+# - Reproducible local environment (same setup for anyone)
+# - Mirrors what you’ll deploy later (container-based)
+# ---------------------------------------------------------
+
+services:
+  # -------------------------
+  # Postgres database service
+  # -------------------------
+  db:
+    # Official Postgres image (stable, widely used)
+    image: postgres:16
+
+    # Environment variables used by the Postgres image on first boot
+    environment:
+      POSTGRES_USER: app # creates user "app"
+      POSTGRES_PASSWORD: app # sets password for user "app"
+      POSTGRES_DB: amino_tracker # creates DB named "amino_tracker"
+
+    # Map container port 5432 -> your machine port 5432
+    # So your local tools can connect (DBeaver, psql, etc.)
+    ports:
+      - "5432:5432"
+
+    # Persist database data even if the container restarts
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # -------------------------
+  # Backend API service
+  # -------------------------
+  api:
+    # Build the API image from the Dockerfile inside ./backend
+    build: ./backend
+
+    # Provide environment variables to the container
+    environment:
+      # SQLAlchemy connection string:
+      # postgresql+psycopg://USER:PASSWORD@HOST:PORT/DB
+      #
+      # IMPORTANT:
+      # - HOST here is "db" (the service name), NOT localhost
+      #   because inside Docker, containers talk via service names.
+      DATABASE_URL: postgresql+psycopg://app:app@db:5432/amino_tracker
+
+    # Expose API port:
+    # container 8000 -> your machine 8000
+    ports:
+      - "8000:8000"
+
+    # Make sure DB container starts before API container
+    depends_on:
+      - db
+
+# Named volumes live outside containers and persist data
+volumes:
+  pgdata:
