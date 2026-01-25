@@ -30,9 +30,8 @@ WORKDIR /app
 # -------------------------
 # - gcc: sometimes needed for Python packages with native extensions
 # - curl: useful for health checks/debugging
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc curl \
-    && rm -rf /var/lib/apt/lists/*
+# Install basic system packages
+RUN apt-get update && apt-get install -y gcc curl
 
 # -------------------------
 # 4. Install Python dependencies
