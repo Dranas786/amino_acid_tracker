@@ -64,6 +64,11 @@ class FoodOut(BaseModel):
     external_source: str
     external_food_id: str
 
+    # NEW: amino-acid coverage metadata for UI warnings / Way 2 pipeline
+    essential_aa_present_count: int
+    essential_aa_total: int
+    amino_data_incomplete: bool
+
     class Config:
         from_attributes = True
 

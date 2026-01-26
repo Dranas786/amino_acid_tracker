@@ -1,0 +1,12 @@
+name,external_source,external_food_id,amino_acid,amount_mg_per_100g,source_type,source_name,source_url,citation_text,version,confidence
+"Chicken breast",manual,chk001,lysine,2600,dataset,USDA FoodData Central,https://fdc.nal.usda.gov,"USDA FoodData Central, Chicken breast",2023,1.0
+"Chicken breast",manual,chk001,leucine,1900,dataset,USDA FoodData Central,https://fdc.nal.usda.gov,"USDA FoodData Central, Chicken breast",2023,1.0
+"Chicken breast",manual,chk001,methionine,550,dataset,USDA FoodData Central,https://fdc.nal.usda.gov,"USDA FoodData Central, Chicken breast",2023,1.0
+
+"Lentils, boiled",manual,len001,lysine,1700,dataset,FAO INFOODS,https://www.fao.org/infoods,"FAO INFOODS, Lentils boiled",2019,1.0
+"Lentils, boiled",manual,len001,leucine,1400,dataset,FAO INFOODS,https://www.fao.org/infoods,"FAO INFOODS, Lentils boiled",2019,1.0
+"Lentils, boiled",manual,len001,methionine,240,dataset,FAO INFOODS,https://www.fao.org/infoods,"FAO INFOODS, Lentils boiled",2019,1.0
+
+"Rice, white, cooked",manual,ric001,lysine,90,dataset,FAO INFOODS,https://www.fao.org/infoods,"FAO INFOODS, White rice cooked",2019,1.0
+"Rice, white, cooked",manual,ric001,leucine,350,dataset,FAO INFOODS,https://www.fao.org/infoods,"FAO INFOODS, White rice cooked",2019,1.0
+"Rice, white, cooked",manual,ric001,methionine,120,dataset,FAO INFOODS,https://www.fao.org/infoods,"FAO INFOODS, White rice cooked",2019,1.0

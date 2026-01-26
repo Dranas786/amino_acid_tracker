@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Integer,
     Float,
+    Boolean,
     ForeignKey,
     UniqueConstraint,
 )
@@ -80,6 +81,33 @@ class Food(Base):
     # ID from the external dataset
     # e.g. USDA foodId
     external_food_id: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    # ---------------------------------------------------------
+    # Amino acid data coverage (for UI warnings + Way 2 pipeline)
+    # ---------------------------------------------------------
+    # How many of the 9 essential amino acids we currently have values for
+    essential_aa_present_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0
+    )
+
+    # Total number of essential amino acids we care about (usually 9)
+    essential_aa_total: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=9
+    )
+
+    # If True, USDA (or the current source) did NOT provide enough AA coverage,
+    # meaning missing values are "not measured / not reported" (unknown, not zero).
+    # The UI can show: "Incomplete amino acid data — consider additional sources."
+    amino_data_incomplete: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True
+    )
+
 
     # Relationship to amino acid values
     # One food -> many amino acid rows

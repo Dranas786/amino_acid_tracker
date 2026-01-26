@@ -1,30 +1,69 @@
 # app/main.py
 # ---------------------------------------------------------
-# This file is the entry point of your FastAPI backend.
-# Docker will run: uvicorn app.main:app
-# Which means:
-# - import module "app.main"
-# - find variable named "app" (the FastAPI instance)
+# This is the ENTRY POINT of the FastAPI application.
+#
+# Responsibilities of this file:
+# 1) Create the FastAPI app
+# 2) Create database tables on startup (dev-only)
+# 3) Attach API routes
+#
+# This file should stay SMALL.
+# Business logic and DB code live elsewhere.
 # ---------------------------------------------------------
 
 from fastapi import FastAPI
 
-# Create the FastAPI application object.
-# This "app" variable is what Uvicorn looks for when starting the server.
+# Import Base + engine so tables can be created
+from app.db import Base, engine
+
+# Import router that contains all endpoints
+from app.routes import router
+
+# ---------------------------------------------------------
+# Create FastAPI application
+# ---------------------------------------------------------
+
 app = FastAPI(
-    title="Amino Acid Tracker API",  # Name shown in the auto-generated docs
-    version="0.1.0",                 # Your API version (useful when you change endpoints later)
+    title="Amino Acid Tracker API",
+    version="0.1.0",
+    description="Backend API for tracking essential amino acids and food combinations",
 )
 
-# A simple "health check" endpoint.
-# This lets you quickly verify the API is running.
-# Example: GET http://localhost:8000/health
-@app.get("/health")
-def health_check():
-    """
-    Health check endpoint.
+# ---------------------------------------------------------
+# Create database tables (DEV ONLY)
+# ---------------------------------------------------------
+# This tells SQLAlchemy:
+# - Look at all classes that inherit from Base (models.py)
+# - Create the corresponding tables in Postgres if they do not exist
+#
+# IMPORTANT:
+# - This is fine for learning and local development
+# - In production, we will replace this with Alembic migrations
+# ---------------------------------------------------------
 
-    Returns a simple JSON response.
-    We use this to verify the server is up and responding.
-    """
-    return {"status": "ok"}
+Base.metadata.create_all(bind=engine)
+
+# ---------------------------------------------------------
+# Attach routes to the app
+# ---------------------------------------------------------
+# This makes all routes defined in routes.py active:
+# - /foods
+# - /foods/{id}/amino
+# - /mix
+# - /recommend
+# ---------------------------------------------------------
+
+app.include_router(router)
+
+# ---------------------------------------------------------
+# Simple root endpoint (optional but useful)
+# ---------------------------------------------------------
+# Lets you open http://localhost:8000/ and see that API is alive
+# ---------------------------------------------------------
+
+@app.get("/")
+def root():
+    return {
+        "message": "Amino Acid Tracker API is running",
+        "docs": "/docs",
+    }
