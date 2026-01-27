@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Amino Tracker — Debug UI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
+          sans-serif;
+        margin: 18px;
+      }
+      .row {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 12px;
+        min-width: 320px;
+        flex: 1;
+      }
+      input,
+      button,
+      select {
+        padding: 8px;
+        font-size: 14px;
+      }
+      button {
+        cursor: pointer;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border-bottom: 1px solid #eee;
+        padding: 6px;
+        text-align: left;
+        vertical-align: top;
+      }
+      .muted {
+        color: #666;
+        font-size: 12px;
+      }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #f3f3f3;
+        font-size: 12px;
+      }
+      .warn {
+        color: #b45309;
+      }
+      .ok {
+        color: #166534;
+      }
+      pre {
+        background: #fafafa;
+        border: 1px solid #eee;
+        padding: 10px;
+        border-radius: 8px;
+        overflow: auto;
+      }
+      .small {
+        font-size: 12px;
+      }
+      .right {
+        text-align: right;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h2>Amino Acid Tracker — Debug UI</h2>
+    <div class="muted">
+      Calls your FastAPI endpoints directly. No frontend build needed.
+    </div>
+
+    <div class="row">
+      <!-- Search -->
+      <div class="card">
+        <h3>1) Search foods</h3>
+        <div style="display: flex; gap: 8px">
+          <input
+            id="q"
+            placeholder="e.g. milk, chicken, peanut butter"
+            style="flex: 1"
+          />
+          <button id="searchBtn">Search</button>
+        </div>
+        <div class="muted">
+          Tip: search a nonsense string like <code>asdfsdf</code> to test
+          failed_searches logging.
+        </div>
+
+        <div style="margin-top: 10px">
+          <table>
+            <thead>
+              <tr>
+                <th>Food</th>
+                <th class="right">Coverage</th>
+                <th class="right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="results"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Food details -->
+      <div class="card">
+        <h3>2) Food amino + provenance</h3>
+        <div class="muted">Select a food from search to load details.</div>
+        <div id="foodDetails" style="margin-top: 10px"></div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top: 18px">
+      <!-- Mix -->
+      <div class="card">
+        <h3>3) Mix totals</h3>
+        <div class="muted">
+          Add foods with grams, then compute totals across essential amino
+          acids.
+        </div>
+
+        <table style="margin-top: 10px">
+          <thead>
+            <tr>
+              <th>Food</th>
+              <th style="width: 110px">Grams</th>
+              <th class="right" style="width: 90px">Remove</th>
+            </tr>
+          </thead>
+          <tbody id="mixRows"></tbody>
+        </table>
+
+        <div style="margin-top: 10px; display: flex; gap: 8px">
+          <button id="mixBtn">Compute /mix</button>
+          <button id="clearMixBtn">Clear</button>
+        </div>
+
+        <div id="mixOut" style="margin-top: 10px"></div>
+      </div>
+
+      <!-- Recommend -->
+      <div class="card">
+        <h3>4) Recommend foods</h3>
+        <div class="muted">
+          Pick “limiting” amino acids and get high-per-100g foods.
+        </div>
+
+        <div id="aaPick" style="margin-top: 10px"></div>
+
+        <div
+          style="margin-top: 10px; display: flex; gap: 8px; align-items: center"
+        >
+          <label class="small">Top N:</label>
+          <input
+            id="topN"
+            type="number"
+            value="10"
+            min="1"
+            style="width: 80px"
+          />
+          <button id="recBtn">Compute /recommend</button>
+        </div>
+
+        <div id="recOut" style="margin-top: 10px"></div>
+      </div>
+    </div>
+
+    <script>
+      const ESSENTIAL = [
+        "histidine",
+        "isoleucine",
+        "leucine",
+        "lysine",
+        "methionine",
+        "phenylalanine",
+        "threonine",
+        "tryptophan",
+        "valine",
+      ];
+
+      const state = {
+        results: [],
+        selectedFood: null,
+        mix: [], // { food_id, name, grams }
+      };
+
+      function el(id) {
+        return document.getElementById(id);
+      }
+
+      function escapeHtml(s) {
+        return (s ?? "")
+          .toString()
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function coveragePill(food) {
+        const present = food.essential_aa_present_count;
+        const total = food.essential_aa_total;
+        const incomplete = food.amino_data_incomplete;
+        const cls = incomplete ? "pill warn" : "pill ok";
+        const label = incomplete
+          ? `Incomplete ${present}/${total}`
+          : `Complete ${present}/${total}`;
+        return `<span class="${cls}">${label}</span>`;
+      }
+
+      async function apiGet(path) {
+        const r = await fetch(path);
+        if (!r.ok) throw new Error(await r.text());
+        return r.json();
+      }
+
+      async function apiPost(path, body) {
+        const r = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        return r.json();
+      }
+
+      function renderResults() {
+        const tbody = el("results");
+        tbody.innerHTML = state.results
+          .map(
+            (f) => `
+          <tr>
+            <td>
+              <div><b>${escapeHtml(f.name)}</b></div>
+              <div class="muted small">id=${f.id} • ${escapeHtml(
+              f.external_source
+            )}:${escapeHtml(f.external_food_id)}</div>
+            </td>
+            <td class="right">${coveragePill(f)}</td>
+            <td class="right">
+              <button data-act="details" data-id="${f.id}">Details</button>
+              <button data-act="add" data-id="${f.id}">Add to mix</button>
+            </td>
+          </tr>
+        `
+          )
+          .join("");
+
+        tbody.querySelectorAll("button").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const id = Number(btn.dataset.id);
+            const act = btn.dataset.act;
+            const food = state.results.find((x) => x.id === id);
+            if (!food) return;
+
+            if (act === "details") await loadDetails(food);
+            if (act === "add") addToMix(food);
+          });
+        });
+      }
+
+      async function loadDetails(food) {
+        state.selectedFood = food;
+        el("foodDetails").innerHTML = `<div class="muted">Loading...</div>`;
+        try {
+          const data = await apiGet(`/foods/${food.id}/amino`);
+          const aa = data.amino_acids_mg_per_100g || {};
+          const sources = data.sources || {};
+
+          const rows = ESSENTIAL.map((name) => {
+            const val = aa[name];
+            const src = sources[name];
+            const valCell =
+              val === undefined
+                ? `<span class="warn">missing (unknown)</span>`
+                : `${val.toFixed(2)} mg/100g`;
+
+            const srcCell = src
+              ? `<div class="small">
+                   <div><b>${escapeHtml(src.source_name)}</b></div>
+                   <div class="muted">${escapeHtml(src.source_url)}</div>
+                   <div class="muted">confidence=${(
+                     src.confidence ?? 0
+                   ).toFixed(2)}</div>
+                 </div>`
+              : `<span class="muted small">—</span>`;
+
+            return `<tr><td>${escapeHtml(
+              name
+            )}</td><td>${valCell}</td><td>${srcCell}</td></tr>`;
+          }).join("");
+
+          el("foodDetails").innerHTML = `
+            <div><b>${escapeHtml(food.name)}</b> ${coveragePill(food)}</div>
+            <div class="muted small">If missing, it means “not reported/unknown”, not 0.</div>
+            <table style="margin-top:10px;">
+              <thead><tr><th>Amino acid</th><th>Value</th><th>Source</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          `;
+        } catch (e) {
+          el("foodDetails").innerHTML = `<pre>${escapeHtml(e.message)}</pre>`;
+        }
+      }
+
+      function addToMix(food) {
+        // default grams
+        const grams = 100;
+        // allow duplicates but keep it simple: if already added, just bump grams
+        const existing = state.mix.find((x) => x.food_id === food.id);
+        if (existing) {
+          existing.grams += grams;
+        } else {
+          state.mix.push({ food_id: food.id, name: food.name, grams });
+        }
+        renderMix();
+      }
+
+      function renderMix() {
+        const tbody = el("mixRows");
+        tbody.innerHTML = state.mix
+          .map(
+            (item, idx) => `
+          <tr>
+            <td>
+              <div><b>${escapeHtml(item.name)}</b></div>
+              <div class="muted small">food_id=${item.food_id}</div>
+            </td>
+            <td>
+              <input data-idx="${idx}" type="number" min="1" value="${
+              item.grams
+            }" style="width:90px;" />
+            </td>
+            <td class="right">
+              <button data-del="${idx}">X</button>
+            </td>
+          </tr>
+        `
+          )
+          .join("");
+
+        tbody.querySelectorAll("input").forEach((inp) => {
+          inp.addEventListener("change", () => {
+            const idx = Number(inp.dataset.idx);
+            const val = Number(inp.value);
+            if (!Number.isFinite(val) || val <= 0) return;
+            state.mix[idx].grams = val;
+          });
+        });
+
+        tbody.querySelectorAll("button").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.del);
+            state.mix.splice(idx, 1);
+            renderMix();
+          });
+        });
+      }
+
+      async function computeMix() {
+        el("mixOut").innerHTML = `<div class="muted">Computing...</div>`;
+        try {
+          const payload = {
+            items: state.mix.map((x) => ({
+              food_id: x.food_id,
+              grams: x.grams,
+            })),
+          };
+          const data = await apiPost("/mix", payload);
+          const totals = data.totals_mg || {};
+
+          const rows = ESSENTIAL.map(
+            (a) => `
+            <tr><td>${escapeHtml(a)}</td><td class="right">${(
+              totals[a] ?? 0
+            ).toFixed(2)}</td></tr>
+          `
+          ).join("");
+
+          el("mixOut").innerHTML = `
+            <div class="muted small">Totals are mg for your selected grams.</div>
+            <table style="margin-top:10px;">
+              <thead><tr><th>Amino acid</th><th class="right">Total mg</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+            <div class="muted small" style="margin-top:8px;">
+              Note: if foods are incomplete, missing AAs remain unknown (not counted here).
+            </div>
+          `;
+        } catch (e) {
+          el("mixOut").innerHTML = `<pre>${escapeHtml(e.message)}</pre>`;
+        }
+      }
+
+      function renderAAPicker() {
+        el("aaPick").innerHTML = ESSENTIAL.map(
+          (a) => `
+          <label style="display:inline-flex; gap:6px; align-items:center; margin-right:12px; margin-bottom:6px;">
+            <input type="checkbox" value="${a}" />
+            <span>${escapeHtml(a)}</span>
+          </label>
+        `
+        ).join("");
+      }
+
+      async function computeRecommend() {
+        el("recOut").innerHTML = `<div class="muted">Computing...</div>`;
+        try {
+          const checked = Array.from(
+            el("aaPick").querySelectorAll("input[type=checkbox]:checked")
+          ).map((x) => x.value);
+
+          const topN = Number(el("topN").value) || 10;
+          const payload = { limiting_amino_acids: checked, top_n: topN };
+          const data = await apiPost("/recommend", payload);
+
+          if (!data || data.length === 0) {
+            el(
+              "recOut"
+            ).innerHTML = `<div class="muted">No recommendations (pick at least one AA).</div>`;
+            return;
+          }
+
+          const rows = data
+            .map(
+              (r) => `
+            <tr>
+              <td>
+                <div><b>${escapeHtml(r.food.name)}</b></div>
+                <div class="muted small">id=${r.food.id} • ${coveragePill(
+                r.food
+              )}</div>
+              </td>
+              <td class="right">${(r.score ?? 0).toFixed(2)}</td>
+              <td>${escapeHtml(r.reason ?? "")}</td>
+            </tr>
+          `
+            )
+            .join("");
+
+          el("recOut").innerHTML = `
+            <table>
+              <thead><tr><th>Food</th><th class="right">Score</th><th>Reason</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          `;
+        } catch (e) {
+          el("recOut").innerHTML = `<pre>${escapeHtml(e.message)}</pre>`;
+        }
+      }
+
+      async function doSearch() {
+        const q = el("q").value.trim();
+        if (q.length < 2) return;
+
+        el(
+          "results"
+        ).innerHTML = `<tr><td colspan="3" class="muted">Searching...</td></tr>`;
+        try {
+          const data = await apiGet(`/foods?q=${encodeURIComponent(q)}`);
+          state.results = data || [];
+          if (state.results.length === 0) {
+            el(
+              "results"
+            ).innerHTML = `<tr><td colspan="3" class="warn">No results. (This should log into failed_searches.)</td></tr>`;
+          } else {
+            renderResults();
+          }
+        } catch (e) {
+          el("results").innerHTML = `<tr><td colspan="3"><pre>${escapeHtml(
+            e.message
+          )}</pre></td></tr>`;
+        }
+      }
+
+      // wire buttons
+      el("searchBtn").addEventListener("click", doSearch);
+      el("q").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") doSearch();
+      });
+
+      el("mixBtn").addEventListener("click", computeMix);
+      el("clearMixBtn").addEventListener("click", () => {
+        state.mix = [];
+        renderMix();
+        el("mixOut").innerHTML = "";
+      });
+
+      el("recBtn").addEventListener("click", computeRecommend);
+
+      // init
+      renderAAPicker();
+      renderMix();
+    </script>
+  </body>
+</html>

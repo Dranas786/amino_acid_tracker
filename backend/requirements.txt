@@ -34,3 +34,5 @@ alembic==1.13.2
 python-dotenv==1.0.1
 
 requests>=2.31.0
+
+scikit-learn==1.5.2

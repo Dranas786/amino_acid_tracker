@@ -12,12 +12,19 @@
 # ---------------------------------------------------------
 
 from fastapi import FastAPI
+import app.models  # ensures FailedSearch is registered on Base metadata as others were imported from crud.py etc.
+
 
 # Import Base + engine so tables can be created
 from app.db import Base, engine
 
 # Import router that contains all endpoints
 from app.routes import router
+
+# static html file for testing ui
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
+
 
 # ---------------------------------------------------------
 # Create FastAPI application
@@ -61,9 +68,9 @@ app.include_router(router)
 # Lets you open http://localhost:8000/ and see that API is alive
 # ---------------------------------------------------------
 
+app.mount("/ui", StaticFiles(directory="app/static", html=True), name="ui")
+
 @app.get("/")
 def root():
-    return {
-        "message": "Amino Acid Tracker API is running",
-        "docs": "/docs",
-    }
+    return RedirectResponse(url="/ui")
+

@@ -1,0 +1,4 @@
+-> Host online
+-> CRON job to automatically run the nlp code and download and ingest the usda data.
+-> Add another ml job to automatically look into failed searches instead of doing that manual step (status='queued' in FailedSearchs)
+-> Pretty up the UI - bare minimum for now

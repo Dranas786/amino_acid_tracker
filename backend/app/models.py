@@ -18,9 +18,12 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     UniqueConstraint,
+    DateTime,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
+from datetime import datetime
 from app.db import Base
 
 # ---------------------------------------------------------
@@ -182,3 +185,31 @@ class FoodAminoAcid(Base):
             name="uq_food_amino"
         ),
     )
+
+class FailedSearch(Base):
+    __tablename__ = "failed_searches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # raw query as user typed it
+    query: Mapped[str] = mapped_column(String(300), nullable=False)
+
+    # normalized for de-duping: lowercase, trimmed, spaces collapsed
+    normalized_query: Mapped[str] = mapped_column(String(300), nullable=False, unique=True)
+
+    seen_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # NLP triage
+    nlp_label: Mapped[str | None] = mapped_column(String(30), nullable=True)  # "food" / "junk"
+    nlp_score: Mapped[float | None] = mapped_column(Float, nullable=True)     # 0..1
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="new")  
+    # new | queued | rejected | resolved
+
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)

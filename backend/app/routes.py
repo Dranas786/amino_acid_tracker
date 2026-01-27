@@ -28,6 +28,8 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app import crud, logic
 from app.schemas import FoodOut, FoodAminoOut, MixIn, MixOut, RecommendIn, RecommendationOut
+from app.failed_searches import log_failed_search
+
 
 # ---------------------------------------------------------
 # APIRouter
@@ -57,11 +59,15 @@ router = APIRouter()
 
 @router.get("/foods", response_model=list[FoodOut])
 def search_foods_endpoint(
-    q: str = Query(..., min_length=2),   # "q" is required and must be at least 2 chars
-    db: Session = Depends(get_db),       # FastAPI injects a DB session here
+    q: str = Query(..., min_length=2), # ... means q is required and has length at least 2
+    db: Session = Depends(get_db),  # connect with db using session
 ):
-    # Call CRUD function to search foods
-    return crud.search_foods(db, q)
+    results = crud.search_foods(db, q)
+    if not results:
+        log_failed_search(db, q)
+        db.commit()
+    return results
+
 
 
 # ---------------------------------------------------------
