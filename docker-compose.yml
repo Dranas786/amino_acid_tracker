@@ -58,7 +58,11 @@ services:
     # Make sure DB container starts before API container
     depends_on:
       - db
+    volumes: # (so new files like providers.py show up without rebuild) (just for dev for prod it should be removed(check changes instead of auto updating docker))
+      - ./backend:/app
+      - hf_cache:/root/.cache/huggingface
 
 # Named volumes live outside containers and persist data
 volumes:
   pgdata:
+  hf_cache:

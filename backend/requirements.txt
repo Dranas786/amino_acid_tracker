@@ -33,6 +33,12 @@ alembic==1.13.2
 # -------------------------------
 python-dotenv==1.0.1
 
+# api requests
 requests>=2.31.0
 
+# for model
 scikit-learn==1.5.2
+
+# pretrained model to classify food or junk
+sentence-transformers==3.0.1
+torch==2.4.1

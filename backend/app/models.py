@@ -213,3 +213,36 @@ class FailedSearch(Base):
     # new | queued | rejected | resolved
 
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+class PaperCandidate(Base):
+    __tablename__ = "paper_candidates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    failed_search_id: Mapped[int] = mapped_column(
+        ForeignKey("failed_searches.id"),
+        nullable=False,
+        index=True,
+    )
+
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)  # "crossref" | "pubmed"
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+
+    doi: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    published_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    authors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    abstract: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # model scores
+    score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    raw_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("failed_search_id", "provider", "doi", name="uq_failed_provider_doi"),
+    )

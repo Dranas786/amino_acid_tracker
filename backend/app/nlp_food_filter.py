@@ -2,74 +2,107 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, Tuple
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
+from sqlalchemy import text
+from app.db import SessionLocal
 
+# ----------------------------
+# Normalization helpers
+# ----------------------------
+_NONWORD_RE = re.compile(r"[^a-z0-9\s\-']+")
+_WS_RE = re.compile(r"\s+")
+_URL_RE = re.compile(r"https?://|www\.", re.IGNORECASE)
 
-# Very small seed set (you can extend this anytime)
-SEED_FOOD = [
-    "chicken breast", "milk", "eggs", "banana", "peanut butter", "rice", "lentils",
-    "tofu", "salmon", "yogurt", "broccoli", "spinach", "oats", "almonds",
-    "paneer", "whey protein", "black beans", "chickpeas", "beef", "pork",
-]
+# If the query is ONLY these words (or mostly these), treat as junk
+JUNK_WORDS = {"help", "hi", "hello", "test", "asdf", "lol", "pls", "please"}
 
-SEED_JUNK = [
-    "asdf", "lol", "help", "??", "12345", "protein pls", "cheap", "best food",
-    "hi", "test", "aaaaaa", "food", "eat", "random", "i want", "how much",
-]
-
-_nonword_re = re.compile(r"[^a-z0-9\s\-']+")
+# Threshold tuned from your DB test:
+# "red peepper" matched "Peppers, sweet, red, raw" at sim=0.375
+# So 0.30 catches it and still rejects obvious wrong matches.
+DB_TRGM_THRESHOLD = 0.30
 
 
-def _normalize(text: str) -> str:
-    t = (text or "").strip().lower()
-    t = _nonword_re.sub(" ", t)
-    t = re.sub(r"\s+", " ", t).strip()
+def _normalize(s: str) -> str:
+    """
+    Lowercase + strip + remove punctuation (keep letters/numbers/spaces/hyphen/apostrophe)
+    + collapse whitespace.
+    """
+    t = (s or "").strip().lower()
+    t = _NONWORD_RE.sub(" ", t)
+    t = _WS_RE.sub(" ", t).strip()
     return t
 
 
 @dataclass
 class NlpResult:
-    label: str   # "food" or "junk"
-    score: float # probability of "food" (0..1)
-    reason: str
+    label: str    # "food" | "junk"
+    score: float  # 0..1 (here: best trigram similarity)
+    reason: str   # explanation string for debugging/audits
 
 
-def build_model() -> Pipeline:
+def _best_food_similarity_db(norm: str) -> tuple[float, str | None]:
     """
-    Tiny model: TF-IDF over character ngrams + logistic regression.
-    This works decently for short queries with typos.
+    Uses pg_trgm similarity against foods.name.
+
+    Requirements:
+      - CREATE EXTENSION pg_trgm;
+      - trigram indexes (optional but recommended)
+
+    Returns:
+      (best_similarity, best_food_name)
     """
-    X = [*SEED_FOOD, *SEED_JUNK]
-    y = [1] * len(SEED_FOOD) + [0] * len(SEED_JUNK)
+    with SessionLocal() as db:
+        row = db.execute(
+            text(
+                """
+                select name, similarity(lower(name), :q) as sim
+                from foods
+                where lower(name) % :q
+                order by sim desc
+                limit 1
+                """
+            ),
+            {"q": norm},
+        ).first()
 
-    model = Pipeline(
-        steps=[
-            ("tfidf", TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5))),
-            ("clf", LogisticRegression(max_iter=300)),
-        ]
-    )
-    model.fit(X, y)
-    return model
+    if not row:
+        return 0.0, None
 
-
-_MODEL = build_model()
+    # SQLAlchemy row supports attribute access by column label
+    best_name = row.name
+    best_sim = float(row.sim or 0.0)
+    return best_sim, best_name
 
 
 def classify_query(q: str) -> NlpResult:
     norm = _normalize(q)
 
-    # Cheap hard rules first (saves false positives)
+    # ----------------------------
+    # Hard rejects (cheap + safe)
+    # ----------------------------
+    if not norm:
+        return NlpResult("junk", 0.0, "empty")
     if len(norm) < 3:
         return NlpResult("junk", 0.0, "too_short")
     if norm.isdigit():
         return NlpResult("junk", 0.0, "digits_only")
+    if _URL_RE.search(norm):
+        return NlpResult("junk", 0.0, "url")
 
-    proba_food = float(_MODEL.predict_proba([norm])[0][1])
+    tokens = norm.split()
 
-    label = "food" if proba_food >= 0.60 else "junk"
-    reason = "ml_threshold>=0.60" if label == "food" else "ml_threshold<0.60"
-    return NlpResult(label, proba_food, reason)
+    # Example: "help" / "pls" / "hello" etc.
+    # We only apply this rule for short queries so we don't reject "help me find lentils"
+    if len(tokens) <= 2 and all(t in JUNK_WORDS for t in tokens):
+        return NlpResult("junk", 0.05, "junk_word_only")
+
+    # ----------------------------
+    # DB trigram classification
+    # ----------------------------
+    best_sim, best_name = _best_food_similarity_db(norm)
+
+    if best_sim >= DB_TRGM_THRESHOLD:
+        # score is similarity; reason includes best match for debugging
+        return NlpResult("food", best_sim, f"db_trgm>={DB_TRGM_THRESHOLD} match={best_name}")
+
+    return NlpResult("junk", best_sim, f"db_trgm<{DB_TRGM_THRESHOLD} best_match={best_name}")
