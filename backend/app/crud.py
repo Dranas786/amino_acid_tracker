@@ -22,7 +22,7 @@ from sqlalchemy import select
 
 from app.models import Food, FoodAminoAcid, Source
 from app.schemas import FoodOut, FoodAminoOut, SourceOut
-
+from typing import Optional
 
 def search_foods(db: Session, query: str, limit: int = 20) -> list[FoodOut]:
     """
@@ -180,3 +180,121 @@ def get_food_amino(db: Session, food_id: int) -> FoodAminoOut:
         amino_acids_mg_per_100g=amino_acids_mg_per_100g,
         sources=sources,
     )
+
+
+def get_or_create_publication_source(
+    db: Session,
+    *,
+    source_name: str,
+    source_url: str,
+    citation_text: str,
+    version: Optional[str] = None,
+) -> Source:
+    """
+    Create (or reuse) a Source row for a publication (paper).
+
+    WHY:
+      - Paper extraction will insert amino acid values from papers.
+      - We want provenance: where each number came from.
+      - DOI can be missing, so we dedupe using (source_type, source_url).
+
+    DEDUPE RULE:
+      If a publication Source already exists with the same URL,
+      reuse it instead of inserting duplicates.
+    """
+
+    existing: Source | None = db.execute(
+        select(Source).where(
+            Source.source_type == "publication",
+            Source.source_url == source_url,
+        )
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        # Optional: backfill missing fields if the row was created with less info.
+        changed = False
+
+        if source_name and not existing.source_name:
+            existing.source_name = source_name
+            changed = True
+
+        if citation_text and not existing.citation_text:
+            existing.citation_text = citation_text
+            changed = True
+
+        if version and not existing.version:
+            existing.version = version
+            changed = True
+
+        if changed:
+            db.add(existing)
+
+        return existing
+
+    # Create new source row
+    src = Source(
+        source_type="publication",
+        source_name=(source_name or "Unknown publication")[:200],
+        source_url=(source_url or "")[:500],
+        citation_text=(citation_text or "")[:500],
+        version=version,
+    )
+    db.add(src)
+    db.flush()  # flush so src.id is available immediately
+    return src
+
+
+def upsert_food_amino_acid(
+    db: Session,
+    *,
+    food_id: int,
+    source_id: int,
+    amino_acid: str,
+    amount_mg_per_100g: float,
+    confidence: float = 1.0,
+    units: str = "mg/100g",
+) -> FoodAminoAcid:
+    """
+    Upsert ONE amino acid row for ONE food.
+
+    UNIQUE KEY:
+      (food_id, amino_acid)
+
+    UPDATE BEHAVIOR:
+      - Always overwrite the numeric amount
+      - Always set the source_id to the newest write
+      - Confidence keeps the *higher* value:
+          USDA (1.0) should beat paper extraction (e.g. 0.7)
+    """
+
+    aa_key = amino_acid.strip().lower()
+
+    existing: FoodAminoAcid | None = db.execute(
+        select(FoodAminoAcid).where(
+            FoodAminoAcid.food_id == food_id,
+            FoodAminoAcid.amino_acid == aa_key,
+        )
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        existing.amount_mg_per_100g = float(amount_mg_per_100g)
+        existing.units = units
+        existing.source_id = source_id
+
+        # Keep the best confidence (higher wins)
+        existing.confidence = float(max(existing.confidence or 0.0, confidence))
+
+        db.add(existing)
+        return existing
+
+    row = FoodAminoAcid(
+        food_id=food_id,
+        amino_acid=aa_key,
+        amount_mg_per_100g=float(amount_mg_per_100g),
+        units=units,
+        confidence=float(confidence),
+        source_id=source_id,
+    )
+    db.add(row)
+    db.flush()
+    return row
