@@ -277,14 +277,17 @@ def upsert_food_amino_acid(
     ).scalar_one_or_none()
 
     if existing is not None:
-        existing.amount_mg_per_100g = float(amount_mg_per_100g)
-        existing.units = units
-        existing.source_id = source_id
+        new_conf = float(confidence)
+        old_conf = float(existing.confidence or 0.0)
 
-        # Keep the best confidence (higher wins)
-        existing.confidence = float(max(existing.confidence or 0.0, confidence))
+        # Only replace the value if it's better (or equal).
+        if new_conf >= old_conf:
+            existing.amount_mg_per_100g = float(amount_mg_per_100g)
+            existing.units = units
+            existing.source_id = source_id
+            existing.confidence = new_conf
+            db.add(existing)
 
-        db.add(existing)
         return existing
 
     row = FoodAminoAcid(
